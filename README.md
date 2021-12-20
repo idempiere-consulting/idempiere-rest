@@ -1,11 +1,13 @@
 
-# Experimental iDempiere Rest API
+# iDempiere Rest API
+
+You can find the documentation on how to use it here: https://wiki.idempiere.org/en/REST_Web_Services.
 
 ## Projects:
 * com.trekglobal.idempiere.extensions.parent - parent pom project
 * com.trekglobal.idempiere.rest.api - rest api project
 * com.trekglobal.idempiere.extensions.p2 - project to build p2 repository
-* iDempiere version - Current Default (i.e 7.1z, the coming 8.1 version)
+* iDempiere version - Current Default 8.2
 
 ## Folder layout:
 * idempiere
@@ -35,5 +37,3 @@
 * at your idempiere instance's root folder (for instance, /opt/idempiere), run ./update-rest-extensions.sh <file or url path to com.trekglobal.idempiere.extensions.p2/target/repository>
 * for e.g, if your source is at /ws/idempiere-rest, ./update-rest-extensions.sh file:////ws/idempiere-rest/com.trekglobal.idempiere.extensions.p2/target/repository
 * if the bundle doesn't auto start after deployment (with STARTING status), at osgi console, run "sta com.trekglobal.idempiere.rest.api" to activate the plugin
-
-this is consider experimental at this point, so use it at your own risk.
