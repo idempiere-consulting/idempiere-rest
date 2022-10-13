@@ -129,7 +129,7 @@ public class RestUtils {
         if(whereClause.isEmpty())
             query = query.setApplyAccessFilter(true, false);
         query.setOnlyActiveRecords(true)
-        .setParameters(convertedStatement.getParameters());
+        .setParameters(params);
 		//iDempiereConsulting __23/04/2021 -------- END
 
 		return query;
