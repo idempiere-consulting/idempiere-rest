@@ -27,32 +27,24 @@ package com.trekglobal.idempiere.rest.api.json;
 
 import static org.compiere.util.DisplayType.Account;
 import static org.compiere.util.DisplayType.Binary;
+import static org.compiere.util.DisplayType.Image;
 import static org.compiere.util.DisplayType.Location;
 import static org.compiere.util.DisplayType.Locator;
 import static org.compiere.util.DisplayType.PAttribute;
 import static org.compiere.util.DisplayType.Payment;
+import static org.compiere.util.DisplayType.Button;
 
 import java.text.Normalizer;
 import java.text.Normalizer.Form;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Locale;
 import java.util.regex.Pattern;
-
-import javax.ws.rs.core.Response.Status;
 
 import org.adempiere.base.Service;
 import org.adempiere.base.ServiceQuery;
 import org.compiere.model.GridField;
 import org.compiere.model.MColumn;
-import org.compiere.model.MRole;
-import org.compiere.model.MTable;
-import org.compiere.model.PO;
-import org.compiere.model.Query;
 import org.compiere.util.DisplayType;
-import org.compiere.util.Env;
-import org.compiere.util.Util;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -186,7 +178,7 @@ public class TypeConverterUtils {
 		query.put("displayType", Integer.toString(displayType));
 		typeConverter = Service.locator().locate(ITypeConverter.class, query).getService();
 		if (typeConverter == null) {
-			if (DisplayType.isNumeric(displayType) && value instanceof Number) {
+			if (((DisplayType.isNumeric(displayType) || displayType == Button) && value instanceof Number)) {
 				typeConverter = new NumericTypeConverter();
 			} else if (DisplayType.isDate(displayType) && value instanceof Date) {
 				typeConverter = new DateTypeConverter();
@@ -202,6 +194,8 @@ public class TypeConverterUtils {
 				return new LookupTypeConverter();
 			} else if (displayType == Binary) {
 				return new BinaryTypeConverter();
+			} else if (displayType == Image) {
+				return new ImageTypeConverter();		
 			}
 		}
 		return typeConverter;
@@ -214,7 +208,7 @@ public class TypeConverterUtils {
 		query.put("displayType", Integer.toString(displayType));
 		typeConverter = Service.locator().locate(ITypeConverter.class, query).getService();
 		if (typeConverter == null) {
-			if (DisplayType.isNumeric(displayType) && (isNumber(value) || isString(value))) {
+			if ((DisplayType.isNumeric(displayType) || displayType == Button) && (isNumber(value) || isString(value))) {
 				typeConverter = new NumericTypeConverter();
 			} else if (DisplayType.isDate(displayType) && isString(value)) {
 				typeConverter = new DateTypeConverter();
@@ -230,6 +224,9 @@ public class TypeConverterUtils {
 				return new LookupTypeConverter();
 			} else if (displayType == Binary) {
 				return new BinaryTypeConverter();
+			}
+			else if (displayType == Image) {
+				return new ImageTypeConverter();
 			}
 		}
 		return typeConverter;
@@ -258,72 +255,5 @@ public class TypeConverterUtils {
 		}
 		return false;
 	}		  	
-	
-	private final static String UUID_REGEX="[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}";
-	
-	/**
-	 * @param value
-	 * @return true if value is a UUID identifier
-	 */
-	private static boolean isUUID(String value) {
-		return value == null ? false : value.matches(UUID_REGEX);
-	}
-	
-	public static PO getPO(String tableName, String recordID, boolean fullyQualified, boolean RW) {
-		boolean isUUID = isUUID(recordID);
-		
-		String keyColumn = getKeyColumn(tableName, isUUID);
-		
-		Query query = new Query(Env.getCtx(), tableName, keyColumn + "=?", null);
-		
-		if (fullyQualified || RW)
-			query.setApplyAccessFilter(fullyQualified, RW);
-		
-		if (isUUID)
-			query.setParameters(recordID);
-		else
-			query.setParameters(Integer.parseInt(recordID));
-		
-		return query.first();
-	}
-	
-	private static String getKeyColumn(String tableName, boolean isUUID) {
-		return isUUID ? PO.getUUIDColumnName(tableName) : tableName + "_ID";
-	}
-	
-	public static HashMap<String, ArrayList<String>> getIncludes(String tableName, String select, String details) {
-		
-		if (Util.isEmpty(select, true) || Util.isEmpty(tableName, true))
-			return null;
 
-		HashMap<String, ArrayList<String>> tableSelect = new HashMap<>();
-
-		boolean hasDetail = !Util.isEmpty(details, true); 
-		MTable mTable = MTable.get(Env.getCtx(), tableName);
-		String[] columnNames = select.split("[,]");
-		for(String columnName : columnNames) {
-			MTable table = mTable;
-			if (hasDetail && columnName.contains("/")) { //Detail select
-				String selectTableName = columnName.substring(0, columnName.indexOf("/")).trim();
-				if (details.toLowerCase().contains(selectTableName.toLowerCase())) {
-					table = MTable.get(Env.getCtx(), selectTableName);
-					columnName = columnName.substring(columnName.indexOf("/")+1, columnName.length());
-				} else {
-					throw new IDempiereRestException(selectTableName + " does not make part of the request body.", Status.BAD_REQUEST);
-				}
-			}
-			if (table.getColumnIndex(columnName.trim()) < 0)
-				throw new IDempiereRestException(columnName + " is not a valid column of table " + table.getTableName(), Status.BAD_REQUEST);
-
-			MColumn mColumn = table.getColumn(columnName.trim());
-			if (MRole.getDefault().isColumnAccess(table.getAD_Table_ID(), mColumn.getAD_Column_ID(), true)) {
-				if (tableSelect.get(table.getTableName()) == null)
-					tableSelect.put(table.getTableName(), new ArrayList<String>());
-				
-				tableSelect.get(table.getTableName()).add(columnName.trim());
-			}
-		}
-
-		return tableSelect;
-	}
 }
