@@ -122,10 +122,15 @@ public class RestUtils {
 		}
 
 		Query query = new Query(Env.getCtx(), table, whereClause, null);
-
-		query.setApplyAccessFilter(true, false)
-			.setOnlyActiveRecords(true)
-			.setParameters(params);
+        //iDempiereConsulting __23/04/2021 ---- Lettura completa, sì access; con filtro (whereClause) bypass access....
+//		query.setApplyAccessFilter(true, false)
+//			.setOnlyActiveRecords(true)
+//			.setParameters(params);
+        if(whereClause.isEmpty())
+            query = query.setApplyAccessFilter(true, false);
+        query.setOnlyActiveRecords(true)
+        .setParameters(convertedStatement.getParameters());
+		//iDempiereConsulting __23/04/2021 -------- END
 
 		return query;
 	}
