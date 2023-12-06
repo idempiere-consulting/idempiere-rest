@@ -171,15 +171,24 @@ public class RestUtils {
 			params.add(Env.getAD_Language(Env.getCtx()));
 		}
 
-		Query query = new Query(Env.getCtx(), table, whereClause, null);
-        //iDempiereConsulting __23/04/2021 ---- Lettura completa, sì access; con filtro (whereClause) bypass access....
+		Query query = new Query(Env.getCtx(), table, whereClause, null)
+				.setApplyAccessFilter(true, false)
+				.setParameters(params);
+
+		if (! whereClause.toLowerCase().matches(".*\\bisactive\\b.*"))
+			query.setOnlyActiveRecords(true);
+
+		//iDempiereConsulting __06/12/2023 --- Gestione vecchia per adesso commentata. Se ci sono problemi o altro, ripristinare. TODO
+
+//		Query query = new Query(Env.getCtx(), table, whereClause, null);
+//        //iDempiereConsulting __23/04/2021 ---- Lettura completa, sì access; con filtro (whereClause) bypass access....
 //		query.setApplyAccessFilter(true, false)
 //			.setOnlyActiveRecords(true)
 //			.setParameters(params);
-        if(whereClause.isEmpty())
-            query = query.setApplyAccessFilter(true, false);
-        query.setOnlyActiveRecords(true)
-        .setParameters(params);
+//       if(whereClause.isEmpty())
+//           query = query.setApplyAccessFilter(true, false);
+//       query.setOnlyActiveRecords(true)
+//      .setParameters(params);
 		//iDempiereConsulting __23/04/2021 -------- END
 
 		return query;

@@ -141,8 +141,17 @@ public class DefaultPOSerializer implements IPOSerializer, IPOSerializerFactory 
 				continue;
 			}
 			Object value = TypeConverterUtils.fromJsonValue(column, field);
-			if (value != null)
+			if (value != null) {
+				if (value instanceof Integer) {
+					if (((Integer)value).intValue() < 0 && DisplayType.isID(column.getAD_Reference_ID())) {
+						value = null;
+					} else if (((Integer)value).intValue() == 0 && DisplayType.isLookup(column.getAD_Reference_ID())) {
+						if (! MTable.isZeroIDTable(column.getReferenceTableName()))
+							value = null;
+					}
+				}
 				po.set_ValueOfColumn(column.getAD_Column_ID(), value);
+			}
 		}
 		
 		return po;
@@ -181,8 +190,17 @@ public class DefaultPOSerializer implements IPOSerializer, IPOSerializerFactory 
 				}
 			}
 			Object value = TypeConverterUtils.fromJsonValue(column, field);
-			if (value != null)
+			if (value != null) {
+				if (value instanceof Integer) {
+					if (((Integer)value).intValue() < 0 && DisplayType.isID(column.getAD_Reference_ID())) {
+						value = null;
+					} else if (((Integer)value).intValue() == 0 && DisplayType.isLookup(column.getAD_Reference_ID())) {
+						if (! MTable.isZeroIDTable(column.getReferenceTableName()))
+							value = null;
+					}
+				}
 				po.set_ValueOfColumn(column.getAD_Column_ID(), value);
+			}
 		}
 		
 		return po;
@@ -209,7 +227,7 @@ public class DefaultPOSerializer implements IPOSerializer, IPOSerializerFactory 
 	}
 	
 	private void setDefaultValue(PO po, MColumn column) {
-		if (!Util.isEmpty(column.getDefaultValue(), true)) {
+		if (!column.isVirtualColumn() && !Util.isEmpty(column.getDefaultValue(), true)) {
 			GridFieldVO vo = GridFieldVO.createParameter(Env.getCtx(), 0, 0, 0, column.getAD_Column_ID(), column.getColumnName(), column.getName(), 
 						DisplayType.isLookup(column.getAD_Reference_ID()) 
 						? (DisplayType.isText(column.getAD_Reference_ID()) || DisplayType.isList(column.getAD_Reference_ID()) ? DisplayType.String : DisplayType.ID) 

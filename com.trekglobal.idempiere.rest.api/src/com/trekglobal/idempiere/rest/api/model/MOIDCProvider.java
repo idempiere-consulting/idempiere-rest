@@ -23,74 +23,79 @@
 * - Trek Global Corporation                                           *
 * - Heng Sin Low                                                      *
 **********************************************************************/
-package com.trekglobal.idempiere.rest.api.json;
+package com.trekglobal.idempiere.rest.api.model;
 
-import org.compiere.model.GridField;
-import org.compiere.model.MColumn;
-import org.compiere.util.DisplayType;
-import static org.compiere.util.DisplayType.Button;
-import static org.compiere.util.DisplayType.RecordID;
+import java.sql.ResultSet;
+import java.util.Properties;
 
-import com.google.gson.JsonElement;
-import com.google.gson.JsonPrimitive;
+import org.adempiere.base.IServiceHolder;
+import org.adempiere.base.Service;
+import org.adempiere.base.ServiceQuery;
+
+import com.trekglobal.idempiere.rest.api.oidc.IOIDCProvider;
 
 /**
- * 
- * json type converter for AD numeric type
  * @author hengsin
- *
  */
-public class NumericTypeConverter implements ITypeConverter<Number> {
+public class MOIDCProvider extends X_REST_OIDCProvider {
+
+	private static final long serialVersionUID = -1900888949266545659L;
 
 	/**
-	 * 
+	 * @param ctx
+	 * @param REST_OIDCProvider_ID
+	 * @param trxName
 	 */
-	public NumericTypeConverter() {
+	public MOIDCProvider(Properties ctx, int REST_OIDCProvider_ID, String trxName) {
+		super(ctx, REST_OIDCProvider_ID, trxName);
 	}
 
-	@Override
-	public Object toJsonValue(MColumn column, Number value) {
-		return toJsonValue(column.getAD_Reference_ID(), value);
+	/**
+	 * @param ctx
+	 * @param REST_OIDCProvider_ID
+	 * @param trxName
+	 * @param virtualColumns
+	 */
+	public MOIDCProvider(Properties ctx, int REST_OIDCProvider_ID, String trxName, String... virtualColumns) {
+		super(ctx, REST_OIDCProvider_ID, trxName, virtualColumns);
 	}
 
-	@Override
-	public Object toJsonValue(GridField field, Number value) {
-		return toJsonValue(field.getDisplayType(), value);
+	/**
+	 * @param ctx
+	 * @param REST_OIDCProvider_UU
+	 * @param trxName
+	 */
+	public MOIDCProvider(Properties ctx, String REST_OIDCProvider_UU, String trxName) {
+		super(ctx, REST_OIDCProvider_UU, trxName);
 	}
 
-	@Override
-	public Object fromJsonValue(MColumn column, JsonElement value) {
-		return fromJsonValue(column.getAD_Reference_ID(), value);
+	/**
+	 * @param ctx
+	 * @param REST_OIDCProvider_UU
+	 * @param trxName
+	 * @param virtualColumns
+	 */
+	public MOIDCProvider(Properties ctx, String REST_OIDCProvider_UU, String trxName, String... virtualColumns) {
+		super(ctx, REST_OIDCProvider_UU, trxName, virtualColumns);
 	}
 
-	@Override
-	public Object fromJsonValue(GridField field, JsonElement value) {
-		return fromJsonValue(field.getDisplayType(), value);
+	/**
+	 * @param ctx
+	 * @param rs
+	 * @param trxName
+	 */
+	public MOIDCProvider(Properties ctx, ResultSet rs, String trxName) {
+		super(ctx, rs, trxName);
 	}
-	
-	private Object toJsonValue(int displayType, Number value) {
-		if (!(DisplayType.isNumeric(displayType) || displayType == Button || displayType == RecordID))
-			return null;
-		
-		if (displayType == DisplayType.Integer) {
-			return value.intValue();
-		} else {
-			return value;
-		}
-	}
-	
-	private Object fromJsonValue(int displayType, JsonElement value) {
-		if (!(DisplayType.isNumeric(displayType) || displayType == Button || displayType == RecordID))
-			return null;
-		
-		JsonPrimitive primitive = (JsonPrimitive) value;
-		if (displayType == DisplayType.Integer) {
-			if (primitive.isString())
-				return Integer.parseInt(primitive.getAsString());
-			else
-				return primitive.getAsInt();
-		} else {
-			return primitive.getAsBigDecimal();
-		}
+
+	/**
+	 * @return IOIDCProvider instance
+	 */
+	public IOIDCProvider getProvider() {
+		String providerName = getName();
+		ServiceQuery query = new ServiceQuery();
+		query.put("name", providerName);
+		IServiceHolder<IOIDCProvider> holder = Service.locator().locate(IOIDCProvider.class, query);
+		return holder.getService();
 	}
 }
