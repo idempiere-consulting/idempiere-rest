@@ -20,7 +20,10 @@ package com.trekglobal.idempiere.rest.api.model;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.util.Properties;
-import org.compiere.model.*;
+
+import org.compiere.model.I_Persistent;
+import org.compiere.model.PO;
+import org.compiere.model.POInfo;
 
 /** Generated Model for REST_RefreshToken
  *  @author iDempiere (generated)

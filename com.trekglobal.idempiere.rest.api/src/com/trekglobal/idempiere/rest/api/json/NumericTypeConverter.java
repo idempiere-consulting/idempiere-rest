@@ -25,11 +25,12 @@
 **********************************************************************/
 package com.trekglobal.idempiere.rest.api.json;
 
+import static org.compiere.util.DisplayType.Button;
+import static org.compiere.util.DisplayType.RecordID;
+
 import org.compiere.model.GridField;
 import org.compiere.model.MColumn;
 import org.compiere.util.DisplayType;
-import static org.compiere.util.DisplayType.Button;
-import static org.compiere.util.DisplayType.RecordID;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
