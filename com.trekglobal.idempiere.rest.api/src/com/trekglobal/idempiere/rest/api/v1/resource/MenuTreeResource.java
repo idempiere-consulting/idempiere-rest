@@ -21,25 +21,33 @@
 *                                                                     *
 * Contributors:                                                       *
 * - BX Service GmbH                                                   *
-* - Diego Ruiz                                                        *
+* - Carlos Ruiz                                                       *
 **********************************************************************/
-package com.trekglobal.idempiere.rest.api.json;
+package com.trekglobal.idempiere.rest.api.v1.resource;
 
-public interface QueryOperators {
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
-	//Supported OData query operators
-	public static final String SELECT  = "$select";
-	public static final String EXPAND  = "$expand";
-	public static final String FILTER  = "$filter";
-	public static final String ORDERBY = "$orderby";
-	public static final String TOP     = "$top";
-	public static final String SKIP    = "$skip";
-	
-	//Custom iDempeire query operators
-	public static final String SHOW_SQL   = "showsql";
-	public static final String VALRULE    = "$valrule";
-	public static final String CONTEXT    = "$context";
-	public static final String REPORTTYPE = "$report_type";
-	public static final String INCLUDE_MSG = "with_messages";
+/**
+ * 
+ * @author Carlos Ruiz
+ *
+ */
+@Path("v1/menutree")
+public interface MenuTreeResource {
+
+	@Path("{menuTreeId}")
+	@GET
+	@Produces(MediaType.APPLICATION_JSON)
+	/**
+	 * Get the menu tree by id
+	 * @param menuTreeId
+	 * @return JSON representation of menu with its children
+	 */
+	public Response getMenu(@PathParam("menuTreeId") String id);
 
 }

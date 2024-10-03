@@ -20,26 +20,28 @@
 * MA 02110-1301, USA.                                                 *
 *                                                                     *
 * Contributors:                                                       *
-* - BX Service GmbH                                                   *
-* - Diego Ruiz                                                        *
+* - Carlos Ruiz - globalqss - bx-service                              *
 **********************************************************************/
-package com.trekglobal.idempiere.rest.api.json;
+package com.trekglobal.idempiere.rest.api.v1.auth;
 
-public interface QueryOperators {
+/**
+ * 
+ * @author Carlos Ruiz
+ *
+ */
+public class LogoutParameters {
 
-	//Supported OData query operators
-	public static final String SELECT  = "$select";
-	public static final String EXPAND  = "$expand";
-	public static final String FILTER  = "$filter";
-	public static final String ORDERBY = "$orderby";
-	public static final String TOP     = "$top";
-	public static final String SKIP    = "$skip";
-	
-	//Custom iDempeire query operators
-	public static final String SHOW_SQL   = "showsql";
-	public static final String VALRULE    = "$valrule";
-	public static final String CONTEXT    = "$context";
-	public static final String REPORTTYPE = "$report_type";
-	public static final String INCLUDE_MSG = "with_messages";
+	private String token;
+
+	public LogoutParameters() {
+	}
+
+	public String getToken() {
+		return token;
+	}
+
+	public void setToken(String token) {
+		this.token = token;
+	}
 
 }
