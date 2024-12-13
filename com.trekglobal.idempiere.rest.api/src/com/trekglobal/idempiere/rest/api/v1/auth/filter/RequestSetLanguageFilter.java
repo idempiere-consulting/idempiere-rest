@@ -23,67 +23,51 @@
 * - Trek Global Corporation                                           *
 * - Heng Sin Low                                                      *
 **********************************************************************/
-package com.trekglobal.idempiere.rest.api.oidc;
+package com.trekglobal.idempiere.rest.api.v1.auth.filter;
 
+import java.io.IOException;
+
+import javax.annotation.Priority;
+import javax.ws.rs.Priorities;
+import javax.ws.rs.container.ContainerRequestContext;
+import javax.ws.rs.container.ContainerRequestFilter;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.ext.Provider;
+
+import org.compiere.model.MLanguage;
+import org.compiere.util.Env;
+import org.compiere.util.Util;
+
+@Provider
+@Priority(Priorities.ENTITY_CODER)
 /**
- * @author hengsin
+ * Request Set Language Filter
+ * Set Language Context based on locale query parameter
+ * @author Igor Pojzl, Cloudempiere
+ *
  */
-public class AuthenticatedUser {
+public class RequestSetLanguageFilter implements ContainerRequestFilter {
+	
+	private final String LANGUAGE_KEY = "locale";
 
-	private int tenantId;
-	private int organizationId;
-	private int roleId;
-	private int userId;
-	private int sessionId;
+	@Override
+	public void filter(ContainerRequestContext requestContext) throws IOException {
+		MultivaluedMap<String, String> queryParams = requestContext.getUriInfo().getQueryParameters();
+		String AD_Language = queryParams.getFirst(LANGUAGE_KEY);
+		if(Util.isEmpty(AD_Language))
+			return;
+		
+		if(isValidLanguage(AD_Language))
+			Env.setContext(Env.getCtx(), Env.LANGUAGE, AD_Language);	// Set Language
+	}
 	
 	/**
-	 * @param tenantId
-	 * @param organizationId
-	 * @param roleId
-	 * @param userId
-	 * @param sessionId 
+	 * Validate is AD_Language String exist and it is System Language
+	 * @param AD_Language
+	 * @return true if Valid else false
 	 */
-	public AuthenticatedUser(int tenantId, int organizationId, int roleId, int userId, int sessionId) {
-		this.tenantId = tenantId;
-		this.organizationId = organizationId;
-		this.roleId = roleId;
-		this.userId = userId;
-		this.sessionId = sessionId;
-	}
-
-	/**
-	 * @return AD_Client_ID
-	 */
-	public int getTenantId() {
-		return tenantId;
-	}
-
-	/**
-	 * @return AD_Org_ID
-	 */
-	public int getOrganizationId() {
-		return organizationId;
-	}
-
-	/**
-	 * @return AD_Role_ID
-	 */
-	public int getRoleId() {
-		return roleId;
-	}
-
-	/**
-	 * @return AD_User_ID
-	 */
-	public int getUserId() {
-		return userId;
-	}
-		
-	/**
-	 * @return AD_Session_ID
-	 */
-	public int getsessionId() {
-		return sessionId;
-	}
-
+	private boolean isValidLanguage(String AD_Language) {
+		MLanguage language = MLanguage.get(Env.getCtx(), AD_Language);
+		return language != null && language.isSystemLanguage();	// Language Exists and It is System Language
+	} 
 }

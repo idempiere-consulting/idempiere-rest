@@ -25,9 +25,9 @@
 **********************************************************************/
 package com.trekglobal.idempiere.rest.api.v1.auth.impl;
 
+import java.security.SecureRandom;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.UUID;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.core.Context;
@@ -46,6 +46,7 @@ import org.compiere.model.MSession;
 import org.compiere.model.MSysConfig;
 import org.compiere.model.MTable;
 import org.compiere.model.MUser;
+import org.compiere.model.PO;
 import org.compiere.model.Query;
 import org.compiere.util.Env;
 import org.compiere.util.KeyNamePair;
@@ -64,6 +65,7 @@ import com.auth0.jwt.interfaces.Claim;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.trekglobal.idempiere.rest.api.json.RestUtils;
 import com.trekglobal.idempiere.rest.api.model.MRefreshToken;
 import com.trekglobal.idempiere.rest.api.util.ErrorBuilder;
 import com.trekglobal.idempiere.rest.api.v1.auth.AuthService;
@@ -259,6 +261,7 @@ public class AuthServiceImpl implements AuthService {
 			MRole role = MRole.get(Env.getCtx(), roleId);
 			Env.setContext(Env.getCtx(), Env.AD_ROLE_ID, role.getAD_Role_ID());
 			MOrg org = MOrg.get(organizationId);
+			Env.setPredefinedVariables(Env.getCtx(), -1, MRole.getDefault().getPredefinedContextVariables());
 			KeyNamePair knp = new KeyNamePair(org.getAD_Org_ID(), org.getName());
 			KeyNamePair[] warehouses = login.getWarehouses(knp);
 			JsonArray array = new JsonArray();
@@ -373,7 +376,8 @@ public class AuthServiceImpl implements AuthService {
 		try {
 			String token = builder.sign(Algorithm.HMAC512(TokenUtils.getTokenSecret()));
 			responseNode.addProperty("token", token);
-			responseNode.addProperty("refresh_token", generateRefreshToken(token, null));
+			Timestamp absoluteExpiresAt = TokenUtils.getTokenAbsoluteExpiresAt();
+			responseNode.addProperty("refresh_token", generateRefreshToken(token, null, absoluteExpiresAt));
 		} catch (IllegalArgumentException | JWTCreationException e) {
 			e.printStackTrace();
 			return Response.status(Status.BAD_REQUEST).build();
@@ -510,12 +514,33 @@ public class AuthServiceImpl implements AuthService {
 	@Override
 	public Response tokenRefresh(RefreshParameters refresh) {
 		String refreshToken = refresh.getRefresh_token();
+		Integer refreshClientId = refresh.getClientId();
+		if (refreshClientId == null && MSysConfig.getBooleanValue("REST_MANDATORY_CLIENT_ID_ON_REFRESH", true)) {
+			return Response.status(Status.UNAUTHORIZED)
+					.entity(new ErrorBuilder().status(Status.UNAUTHORIZED).title("Authenticate error").append("No clientId provided").build().toString())
+					.build();
+		}
+		Integer refreshUserId = refresh.getUserId();
+		if (refreshUserId == null && MSysConfig.getBooleanValue("REST_MANDATORY_USER_ID_ON_REFRESH", true)) {
+			return Response.status(Status.UNAUTHORIZED)
+					.entity(new ErrorBuilder().status(Status.UNAUTHORIZED).title("Authenticate error").append("No userId provided").build().toString())
+					.build();
+		}
+
+		if (MRefreshToken.isParent(refreshToken)) {
+			Env.setContext(Env.getCtx(), Env.AD_CLIENT_ID, 0);
+			MRefreshToken.breachDetected(refreshToken);
+			return Response.status(Status.UNAUTHORIZED)
+					.entity(new ErrorBuilder().status(Status.UNAUTHORIZED).title("Authenticate error").append("Invalid refresh token").build().toString())
+					.build();
+		}
+
 		Algorithm algorithm = Algorithm.HMAC512(TokenUtils.getTokenSecret());
 		JWTVerifier verifier = JWT.require(algorithm)
 		        .withIssuer(TokenUtils.getTokenIssuer())
 		        .build(); //Reusable verifier instance
 
-		// Verify the refresh token (expiration, signature)
+		// Verify the refresh token (signature)
 		try {
 			verifier.verify(refreshToken);
 		} catch (JWTVerificationException e) {
@@ -525,12 +550,24 @@ public class AuthServiceImpl implements AuthService {
 		}
 
 		// get the auth token from the refresh token
-		String authToken = MRefreshToken.getAuthToken(refreshToken);
-		if (Util.isEmpty(authToken)) {
+		MRefreshToken refreshTokenInDB = MRefreshToken.getValidForRefresh(refreshToken);
+		if (refreshTokenInDB == null) {
 			return Response.status(Status.UNAUTHORIZED)
 					.entity(new ErrorBuilder().status(Status.UNAUTHORIZED).title("Authenticate error").append("Invalid refresh token").build().toString())
 					.build();
 		}
+		if (refreshClientId != null && refreshTokenInDB.getAD_Client_ID() != refreshClientId) {
+			return Response.status(Status.UNAUTHORIZED)
+					.entity(new ErrorBuilder().status(Status.UNAUTHORIZED).title("Authenticate error").append("Invalid refresh token").build().toString())
+					.build();
+		}
+		if (refreshUserId != null && refreshTokenInDB.getCreatedBy() != refreshUserId) {
+			return Response.status(Status.UNAUTHORIZED)
+					.entity(new ErrorBuilder().status(Status.UNAUTHORIZED).title("Authenticate error").append("Invalid refresh token").build().toString())
+					.build();
+		}
+
+		String authToken = refreshTokenInDB.getToken();
 
 		JWTVerifier decoder = JWT.require(algorithm)
 		        .withIssuer(TokenUtils.getTokenIssuer())
@@ -598,7 +635,7 @@ public class AuthServiceImpl implements AuthService {
 		try {
 			String token = builder.sign(Algorithm.HMAC512(TokenUtils.getTokenSecret()));
 			responseNode.addProperty("token", token);
-			responseNode.addProperty("refresh_token", generateRefreshToken(token, refreshToken));
+			responseNode.addProperty("refresh_token", generateRefreshToken(token, refreshToken, null));
 		} catch (IllegalArgumentException | JWTCreationException e) {
 			e.printStackTrace();
 			return Response.status(Status.BAD_REQUEST).build();
@@ -611,19 +648,31 @@ public class AuthServiceImpl implements AuthService {
 	 * @param previousRefreshToken 
 	 * @return
 	 */
-	private String generateRefreshToken(String token, String previousRefreshToken) {
-		String uuidJWT = UUID.randomUUID().toString();
-		Builder builder = JWT.create().withJWTId(uuidJWT);
-
-		Timestamp expiresAt = TokenUtils.getRefreshTokenExpiresAt();
-		builder.withIssuer(TokenUtils.getTokenIssuer()).withExpiresAt(expiresAt).withKeyId(TokenUtils.getTokenKeyId());
+	private String generateRefreshToken(String token, String previousRefreshToken, Timestamp absoluteExpiresAt) {
+		SecureRandom secureRandom = new SecureRandom();
+		byte[] randomBytes = new byte[32];
+        secureRandom.nextBytes(randomBytes);
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : randomBytes)
+            hexString.append(String.format("%02x", b));
+		Builder builder = JWT.create().withJWTId(hexString.toString());
+		Timestamp inactiveExpiresAt = TokenUtils.getRefreshTokenExpiresAt();
+		builder.withIssuer(TokenUtils.getTokenIssuer()).withKeyId(TokenUtils.getTokenKeyId());
 		String refreshToken = builder.sign(Algorithm.HMAC512(TokenUtils.getTokenSecret()));
 
 		// persist in database
-		MRefreshToken refreshTokenInDB = new MRefreshToken(token, refreshToken, expiresAt);
+		MRefreshToken refreshTokenInDB = new MRefreshToken(Env.getCtx(), PO.UUID_NEW_RECORD, null);
+		refreshTokenInDB.setToken(token);
+		refreshTokenInDB.setRefreshToken(refreshToken);
+		refreshTokenInDB.setParentToken(previousRefreshToken);
+		refreshTokenInDB.setExpiresAt(inactiveExpiresAt);
+		refreshTokenInDB.setAbsoluteExpiresAt(absoluteExpiresAt);
+		if (previousRefreshToken != null && absoluteExpiresAt == null) {
+			MRefreshToken prt = MRefreshToken.get(previousRefreshToken);
+			if (prt != null)
+				refreshTokenInDB.setAbsoluteExpiresAt(prt.getAbsoluteExpiresAt());
+		}
 		refreshTokenInDB.save();
-		if (previousRefreshToken != null)
-			MRefreshToken.deleteRefreshToken(previousRefreshToken);
 
 		return refreshToken;
 	}
@@ -667,8 +716,9 @@ public class AuthServiceImpl implements AuthService {
 		Env.setContext(Env.getCtx(), Env.AD_SESSION_ID, sessionId);
 		MSession session = new MSession(Env.getCtx(), sessionId, null);
 		session.logout();
+		RestUtils.removeSavedCtx(sessionId);
 
-		MRefreshToken.deleteToken(token);
+		MRefreshToken.logout(token);
 
 		JsonObject okResponse = new JsonObject();
 		okResponse.addProperty("summary", "OK");

@@ -27,10 +27,11 @@ package com.trekglobal.idempiere.rest.api.v1.auth.filter;
 
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
-import java.sql.Timestamp;
 import java.util.Properties;
 
+import javax.annotation.Priority;
 import javax.ws.rs.HttpMethod;
+import javax.ws.rs.Priorities;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
 import javax.ws.rs.core.HttpHeaders;
@@ -38,9 +39,6 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.ext.Provider;
 
 import org.adempiere.util.ServerContext;
-import org.compiere.model.MAcctSchema;
-import org.compiere.model.MClientInfo;
-import org.compiere.model.MRole;
 import org.compiere.model.MSession;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
@@ -52,6 +50,7 @@ import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTVerificationException;
 import com.auth0.jwt.interfaces.Claim;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import com.trekglobal.idempiere.rest.api.json.RestUtils;
 import com.trekglobal.idempiere.rest.api.model.MAuthToken;
 import com.trekglobal.idempiere.rest.api.model.MOIDCService;
 import com.trekglobal.idempiere.rest.api.model.MRefreshToken;
@@ -59,6 +58,7 @@ import com.trekglobal.idempiere.rest.api.v1.jwt.LoginClaims;
 import com.trekglobal.idempiere.rest.api.v1.jwt.TokenUtils;
 
 @Provider
+@Priority(Priorities.AUTHORIZATION)
 /**
  * Validate JWT token and set environment context(client,org,user,role and warehouse)
  * @author hengsin
@@ -122,6 +122,9 @@ public class RequestFilter implements ContainerRequestFilter {
 		if(MAuthToken.isBlocked(token)) {
 			throw new JWTVerificationException("Token is blocked");
 		}
+		if(MRefreshToken.isRevoked(token)) {
+			throw new JWTVerificationException("Token is revoked");
+		}
 		
 		MOIDCService service = MOIDCService.findMatchingOIDCService(token);
 		if (service != null) {
@@ -183,7 +186,7 @@ public class RequestFilter implements ContainerRequestFilter {
 				// is possible that the session was finished in a reboot instead of a logout
 				// if there is a REST_AuthToken or a REST_RefreshToken, then the user has not logged out
 				MAuthToken authToken = MAuthToken.get(Env.getCtx(), token);
-				if (authToken != null || MRefreshToken.exists(token)) {
+				if (authToken != null  || MRefreshToken.existsAuthToken(token)) {
 					DB.executeUpdateEx("UPDATE AD_Session SET Processed='N', UpdatedBy=CreatedBy, Updated=getDate() WHERE AD_Session_ID=?", new Object[] {AD_Session_ID}, null);
 					session.load(session.get_TrxName());
 				} else {
@@ -191,40 +194,7 @@ public class RequestFilter implements ContainerRequestFilter {
 				}
 			}
 		}
-		
-		if (AD_Role_ID > 0) {
-			if (MRole.getDefault(Env.getCtx(), false).isShowAcct())
-				Env.setContext(Env.getCtx(), "#ShowAcct", "Y");
-			else
-				Env.setContext(Env.getCtx(), "#ShowAcct", "N");
-		}
-		
-		Env.setContext(Env.getCtx(), "#Date", new Timestamp(System.currentTimeMillis()));
-		
-		/** Define AcctSchema , Currency, HasAlias **/
-		if (AD_Client_ID > 0) {
-			if (MClientInfo.get(Env.getCtx(), AD_Client_ID).getC_AcctSchema1_ID() > 0) {
-				MAcctSchema primary = MAcctSchema.get(Env.getCtx(), MClientInfo.get(Env.getCtx(), AD_Client_ID).getC_AcctSchema1_ID());
-				Env.setContext(Env.getCtx(), "$C_AcctSchema_ID", primary.getC_AcctSchema_ID());
-				Env.setContext(Env.getCtx(), "$C_Currency_ID", primary.getC_Currency_ID());
-				Env.setContext(Env.getCtx(), "$HasAlias", primary.isHasAlias());
-			}
-			
-			MAcctSchema[] ass = MAcctSchema.getClientAcctSchema(Env.getCtx(), AD_Client_ID);
-			if(ass != null && ass.length > 1) {
-				for(MAcctSchema as : ass) {
-					if (as.getAD_OrgOnly_ID() != 0) {
-						if (as.isSkipOrg(AD_Org_ID)) {
-							continue;
-						} else  {
-							Env.setContext(Env.getCtx(), "$C_AcctSchema_ID", as.getC_AcctSchema_ID());
-							Env.setContext(Env.getCtx(), "$C_Currency_ID", as.getC_Currency_ID());
-							Env.setContext(Env.getCtx(), "$HasAlias", as.isHasAlias());
-							break;
-						}
-					}
-				}
-			}
-		}
+		RestUtils.setSessionContextVariables(Env.getCtx());
 	}
+
 }

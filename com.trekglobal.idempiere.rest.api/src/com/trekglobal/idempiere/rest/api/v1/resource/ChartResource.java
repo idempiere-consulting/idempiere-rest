@@ -20,70 +20,49 @@
 * MA 02110-1301, USA.                                                 *
 *                                                                     *
 * Contributors:                                                       *
-* - Trek Global Corporation                                           *
-* - Heng Sin Low                                                      *
+* - BX Service GmbH                                                   *
+* - Carlos Ruiz                                                       *
 **********************************************************************/
-package com.trekglobal.idempiere.rest.api.oidc;
+package com.trekglobal.idempiere.rest.api.v1.resource;
+
+import javax.ws.rs.DefaultValue;
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+
+import com.trekglobal.idempiere.rest.api.json.QueryOperators;
 
 /**
- * @author hengsin
+ * 
+ * @author Carlos Ruiz
+ *
  */
-public class AuthenticatedUser {
+@Path("v1/charts")
+public interface ChartResource {
 
-	private int tenantId;
-	private int organizationId;
-	private int roleId;
-	private int userId;
-	private int sessionId;
-	
+	@Path("{chartId}")
+	@GET
+	@Produces(MediaType.APPLICATION_JSON)
 	/**
-	 * @param tenantId
-	 * @param organizationId
-	 * @param roleId
-	 * @param userId
-	 * @param sessionId 
+	 * Get the resulting image of the chart by id
+	 * @param chartId
+	 * @return image file, or JSON representation of chart image when the "json" parameter is present
 	 */
-	public AuthenticatedUser(int tenantId, int organizationId, int roleId, int userId, int sessionId) {
-		this.tenantId = tenantId;
-		this.organizationId = organizationId;
-		this.roleId = roleId;
-		this.userId = userId;
-		this.sessionId = sessionId;
-	}
+	public Response getChartImage(@PathParam("chartId") String id, @QueryParam("width") @DefaultValue("-1") int width, @QueryParam("height") @DefaultValue("-1") int height,
+			@QueryParam(QueryOperators.AS_JSON) String asJson);
 
+	@Path("{chartId}/data")
+	@GET
+	@Produces(MediaType.APPLICATION_JSON)
 	/**
-	 * @return AD_Client_ID
+	 * Get the resulting data of the chart by id
+	 * @param chartId
+	 * @return data represented as JSON
 	 */
-	public int getTenantId() {
-		return tenantId;
-	}
-
-	/**
-	 * @return AD_Org_ID
-	 */
-	public int getOrganizationId() {
-		return organizationId;
-	}
-
-	/**
-	 * @return AD_Role_ID
-	 */
-	public int getRoleId() {
-		return roleId;
-	}
-
-	/**
-	 * @return AD_User_ID
-	 */
-	public int getUserId() {
-		return userId;
-	}
-		
-	/**
-	 * @return AD_Session_ID
-	 */
-	public int getsessionId() {
-		return sessionId;
-	}
+	public Response getChartData(@PathParam("chartId") String id);
 
 }
