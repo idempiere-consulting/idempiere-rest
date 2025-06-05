@@ -34,6 +34,8 @@ import java.util.regex.Pattern;
 import javax.ws.rs.core.Response.Status;
 
 import org.compiere.model.MColumn;
+import org.compiere.model.MLabel;
+import org.compiere.model.MLabelAssignment;
 import org.compiere.model.MSysConfig;
 import org.compiere.model.MTable;
 import org.compiere.model.MValRule;
@@ -45,6 +47,7 @@ import org.compiere.util.Util;
 
 import com.trekglobal.idempiere.rest.api.json.filter.ConvertedQuery;
 import com.trekglobal.idempiere.rest.api.json.filter.IQueryConverter;
+import com.trekglobal.idempiere.rest.api.model.MRestView;
 
 public class ModelHelper {
 	
@@ -63,24 +66,40 @@ public class ModelHelper {
 	private int skip;
 	private String validationRuleID;
 	private String context;
+	private String labelFilter;
 	
 	private int rowCount = 0;
 	private int pageCount = 0;
 	private String sqlStatement;
+	private MRestView view;
 	
 	public ModelHelper(String tableName, String filter, String orderBy, 
-			int top, int skip, String validationRuleID, String context) {
+			int top, int skip, String validationRuleID, String context, String labelFilter) {
 		this.tableName=tableName;
 		this.filter=filter;
 		this.orderBy=orderBy;
 		this.top=top;
 		this.skip=skip;
 		this.validationRuleID=validationRuleID;
-		this.context=context;		
+		this.context=context;
+		this.labelFilter=labelFilter;
+	}
+	
+	public ModelHelper(String tableName, String filter, String orderBy, 
+			int top, int skip, String validationRuleID, String context) {
+		this(tableName, filter, orderBy, top, skip, validationRuleID, context, null);
 	}
 	
 	public ModelHelper(String tableName, String filter, String orderBy, int top, int skip) {
 		this(tableName, filter, orderBy, top, skip, null, null);
+	}
+	
+	public void setView(MRestView view) {
+		this.view = view;
+		//validate view and tableName agree, should never happens
+		if (view != null && !(MTable.getTableName(Env.getCtx(), view.getAD_Table_ID()).equalsIgnoreCase(tableName))) {
+			throw new IllegalArgumentException("Rest view belongs to a different table from what this ModelHelper is using");
+		}
 	}
 	
 	public List<PO> getPOsFromRequest() {
@@ -88,15 +107,38 @@ public class ModelHelper {
 	}
 	
 	public List<PO> getPOsFromRequest(String[] includeColumns) {
-
 		String whereClause = getRequestWhereClause();
 		IQueryConverter converter = IQueryConverter.getQueryConverter("DEFAULT");
 		MTable table = RestUtils.getTableAndCheckAccess(tableName);
 
-		ConvertedQuery convertedStatement = converter.convertStatement(tableName, whereClause);
+		ConvertedQuery convertedStatement = converter.convertStatement(view, tableName, whereClause);
 		String convertedWhereClause = getFullWhereClause(convertedStatement);
+		List<Object> parameters = new ArrayList<Object>();
+		parameters.addAll(convertedStatement.getParameters());
+		
+		if (!Util.isEmpty(labelFilter, true)) {
+			IQueryConverter converter0 = IQueryConverter.getQueryConverter("DEFAULT");
+			ConvertedQuery convertedStatement0 = converter0.convertStatement(MLabel.Table_Name, labelFilter);
+			String convertedWhereClause0 = convertedStatement0.getWhereClause();
+			if (!Util.isEmpty(convertedWhereClause0, true)) {
+				StringBuilder whereClause0 = new StringBuilder();
+				whereClause0.append("(" + table.getAD_Table_ID() + ", " + PO.getUUIDColumnName(table.getTableName()) + ") IN (");
+				whereClause0.append("SELECT ").append(MLabelAssignment.COLUMNNAME_AD_Table_ID).append(", ").append(MLabelAssignment.COLUMNNAME_Record_UU);
+				whereClause0.append(" FROM ").append(MLabelAssignment.Table_Name);
+				whereClause0.append(" WHERE ").append(MLabelAssignment.COLUMNNAME_IsActive).append("='Y'");
+				whereClause0.append(" AND ").append(MLabelAssignment.COLUMNNAME_AD_Label_ID).append(" IN (");
+				whereClause0.append("SELECT ").append(MLabel.COLUMNNAME_AD_Label_ID);
+				whereClause0.append(" FROM ").append(MLabel.Table_Name);
+				whereClause0.append(" WHERE ").append(MLabel.COLUMNNAME_IsActive).append("='Y'");
+				whereClause0.append(" AND ").append(convertedWhereClause0).append("))");
+				if (convertedWhereClause.length() > 0)
+					convertedWhereClause += " AND ";
+				convertedWhereClause += whereClause0.toString();
+				parameters.addAll(convertedStatement0.getParameters());
+			}
+		}
 
-		Query query = RestUtils.getQuery(tableName, convertedWhereClause,  new ArrayList<Object>(convertedStatement.getParameters()));
+		Query query = RestUtils.getQuery(tableName, convertedWhereClause, parameters);
 		addOrderByWhenValid(table, orderBy, query);
 
 		query.setQueryTimeout(DEFAULT_QUERY_TIMEOUT);
@@ -142,6 +184,18 @@ public class ModelHelper {
 					convertedWhereClause = parseContext(convertedWhereClause, context);
 				}
 			}
+		}
+		
+		//add optional where clause from view definition
+		if (view != null && !Util.isEmpty(view.getWhereClause(), true)) {
+			String viewWhereClause = view.getWhereClause();
+			int atIdx = viewWhereClause.indexOf("@");
+			if (atIdx >= 0 && viewWhereClause.indexOf("@", atIdx+1) > atIdx) {
+				viewWhereClause = Env.parseContext(Env.getCtx(), -1, viewWhereClause, false);
+			}
+			if (!Util.isEmpty(convertedWhereClause))
+				convertedWhereClause =  convertedWhereClause + " AND ";			
+			convertedWhereClause = convertedWhereClause + "(" + viewWhereClause + ")";
 		}
 		
 		return convertedWhereClause;

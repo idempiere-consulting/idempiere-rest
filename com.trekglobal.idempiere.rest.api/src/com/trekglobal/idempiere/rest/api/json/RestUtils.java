@@ -56,6 +56,8 @@ import org.compiere.util.Ini;
 import org.compiere.util.Language;
 import org.compiere.util.Util;
 
+import com.trekglobal.idempiere.rest.api.model.MRestView;
+
 public class RestUtils {
 
 	private final static CLogger log = CLogger.getCLogger(RestUtils.class);
@@ -247,7 +249,7 @@ public class RestUtils {
 	
 	public static boolean hasAccess(MTable table, boolean isReadWrite) {
 		MRole role = MRole.getDefault();
-		if (role == null)
+		if (table == null || role == null)
 			return false;
 		
 		StringBuilder builder = new StringBuilder("SELECT DISTINCT a.AD_Window_ID FROM AD_Window a JOIN AD_Tab b ON a.AD_Window_ID=b.AD_Window_ID ");
@@ -269,7 +271,7 @@ public class RestUtils {
 		}
 		
 		//If no window or no access to the window - check if the role has read/write access to the table
-		return role.isTableAccess(table.getAD_Table_ID(), false);
+		return role.isTableAccess(table.getAD_Table_ID(), !isReadWrite);
 	}
 	
 	public static boolean hasRoleUpdateAccess(int AD_Client_ID, int AD_Org_ID, int AD_Table_ID, int Record_ID, boolean isNew) {
@@ -286,15 +288,108 @@ public class RestUtils {
 	public static boolean hasRoleColumnAccess(int AD_Table_ID, int AD_Column_ID, boolean readOnly) {
 		return MRole.getDefault(Env.getCtx(), false).isColumnAccess(AD_Table_ID, AD_Column_ID, readOnly);
 	}
+
+	/**
+	 * Get view definition
+	 * @param name
+	 * @return Rest view.
+	 */
+	public static MRestView getView(String name) {
+		MRestView view = MRestView.get(name);
+		if (view == null || view.get_ID()==0) {
+			return null;
+		}
+		
+		return view;
+	}
+
+	/**
+	 * Get column that link parent and child table.<br/>
+	 * If same column name is use to link parent and child table, return a single column name.</br>
+	 * If different column name is use to link parent and child table, return parentColumnName:childColumnName.
+	 * @param parentTable
+	 * @param childTable
+	 * @return single column name or parentColumnName:childColumnName
+	 */
+	public static String getLinkKeyColumnName(String parentTable, String childTable) {
+		MTable pTable = MTable.get(Env.getCtx(), parentTable);
+		MTable cTable = MTable.get(Env.getCtx(), childTable);
+		if (cTable == null || cTable.getAD_Table_ID()==0) {
+			throw new IDempiereRestException("Invalid table name", "No match found for table name: " + childTable, Status.NOT_FOUND);
+		}		
+		MColumn[] cColumns = cTable.getColumns(false);
+		String[] parentKeys = pTable.getKeyColumns();
+		
+		//handle tree
+		if (pTable.getAD_Table_ID() == cTable.getAD_Table_ID())
+		{
+			if (cTable.getColumn("Parent_ID") != null) {
+				if (parentKeys.length == 2 
+					&& "AD_Tree_ID".equals(parentKeys[0]) 
+					&& "Node_ID".equals(parentKeys[1]))
+					return parentKeys[1]+":Parent_ID";
+				else
+					return parentKeys[0]+":Parent_ID";
+			}
+			for(MColumn col : cColumns) {
+				if (col.isKey())
+					continue;
+				if (col.getColumnName().endsWith("_ID")) {
+					if (parentTable.equalsIgnoreCase(col.getReferenceTableName())) {
+						return parentKeys[0]+":"+col.getColumnName();
+					}
+				}
+			}
+			throw new IDempiereRestException("Wrong detail", "Cannot expand to the detail table because it has no column that links to the parent table: " + childTable, Status.INTERNAL_SERVER_ERROR);
+		}
+		
+		//check parent keys
+		if (parentKeys.length == 1) {
+			if (cTable.getColumnIndex(parentKeys[0]) >= 0) {
+				return parentKeys[0];
+			}
+			//match reference table of parent and child id column
+			for(MColumn c : cColumns) {
+				if (c.getColumnName().endsWith("_ID")) {
+					if (parentTable.equalsIgnoreCase(c.getReferenceTableName())) {
+						return parentKeys[0]+":"+c.getColumnName();
+					}
+				}
+			}
+		} else if (parentKeys.length > 1) {
+			for(String pKey : parentKeys) {
+				String pRefTable = pTable.getColumn(pKey).getReferenceTableName();
+				if (pRefTable != null) {
+					//match reference table of parent and child id column
+					for(MColumn c : cColumns) {
+						if (c.getColumnName().endsWith("_ID")) {
+							if (pRefTable.equalsIgnoreCase(c.getReferenceTableName())) {
+								return pKey+":"+c.getColumnName();
+							}
+						}
+					}
+				}
+			}
+		} 
+				
+		throw new IDempiereRestException("Wrong detail", "Cannot expand to the detail table because it has no column that links to the parent table: " + childTable, Status.INTERNAL_SERVER_ERROR);
+	}
 	
 	public static String getKeyColumnName(String tableName) {
 		MTable table = MTable.get(Env.getCtx(), tableName);
+		if (table == null)
+			throw new IDempiereRestException("Invalid Table Name", "The requested table name is invalid or does not exist. Please verify the table name and try again.", Status.BAD_REQUEST);
+		
 		String[] keyColumns = table.getKeyColumns();
 		
 		if (keyColumns.length <= 0 || keyColumns.length > 1)
 			throw new IDempiereRestException("Wrong detail", "Cannot expand to the detail table because it has none or more than one primary key: " + tableName, Status.INTERNAL_SERVER_ERROR);
 
 		return keyColumns[0];
+	}
+	
+	public static boolean isValidDetailTable(MTable childTable, String parentKeyColumnName) {
+		return childTable != null && childTable.getColumnIndex(parentKeyColumnName) > 0;
 	}
 	
 	/**
@@ -327,7 +422,7 @@ public class RestUtils {
 	public static void setSessionContextVariables(Properties ctx) {
 		int sessionId = Env.getContextAsInt(ctx, Env.AD_SESSION_ID);
 		if (sessionId > 0) {
-			if (ctxSessionCache.containsKey(sessionId)) {
+			if (ctxSessionCache.containsKey(sessionId)) { 
 				// key found in cache, just set the properties found in cache and return
 				Properties savedCtx = ctxSessionCache.get(sessionId);
 				setCtxFromSavedCtx(ctx, savedCtx);

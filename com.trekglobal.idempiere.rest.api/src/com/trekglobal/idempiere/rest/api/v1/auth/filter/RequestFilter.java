@@ -39,9 +39,14 @@ import javax.ws.rs.core.Response;
 import javax.ws.rs.ext.Provider;
 
 import org.adempiere.util.ServerContext;
+import org.compiere.model.MClient;
+import org.compiere.model.MRole;
 import org.compiere.model.MSession;
+import org.compiere.model.MUser;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
+import org.compiere.util.KeyNamePair;
+import org.compiere.util.Login;
 import org.compiere.util.Util;
 
 import com.auth0.jwt.JWT;
@@ -54,6 +59,7 @@ import com.trekglobal.idempiere.rest.api.json.RestUtils;
 import com.trekglobal.idempiere.rest.api.model.MAuthToken;
 import com.trekglobal.idempiere.rest.api.model.MOIDCService;
 import com.trekglobal.idempiere.rest.api.model.MRefreshToken;
+import com.trekglobal.idempiere.rest.api.model.MRestResourceAccess;
 import com.trekglobal.idempiere.rest.api.v1.jwt.LoginClaims;
 import com.trekglobal.idempiere.rest.api.v1.jwt.TokenUtils;
 
@@ -98,11 +104,25 @@ public class RequestFilter implements ContainerRequestFilter {
 		// consume JWT i.e. execute signature validation
 		if (authHeaderVal != null && authHeaderVal.startsWith("Bearer")) {
 			try {
-				validate(authHeaderVal.split(" ")[1], requestContext);
+				//validate Bearer token exists
+				String[] authHeaderValues = authHeaderVal.split(" ");
+				if (authHeaderValues.length < 2) {
+					requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED).build());
+					return;
+				}
+				validate(authHeaderValues[1], requestContext);
 				if (Util.isEmpty(Env.getContext(Env.getCtx(), Env.AD_USER_ID)) ||
 					Util.isEmpty(Env.getContext(Env.getCtx(), Env.AD_ROLE_ID))) {
 					if (!requestContext.getUriInfo().getPath().startsWith("v1/auth/")) {
 						requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED).build());
+					}
+				}
+				//check resource access by role (if enable)
+				if (MRestResourceAccess.isResourceAccessByRole()) {
+					if (!requestContext.getUriInfo().getPath().startsWith("v1/auth/")) {
+						if (!MRestResourceAccess.hasAccess(requestContext.getUriInfo().getPath(true), requestContext.getMethod())) {
+							requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED).build());
+						}
 					}
 				}
 			} catch (JWTVerificationException ex) {
@@ -149,16 +169,31 @@ public class RequestFilter implements ContainerRequestFilter {
 		int AD_Client_ID = 0;
 		if (!claim.isNull() && !claim.isMissing()) {
 			AD_Client_ID = claim.asInt();
+			MClient client = MClient.get(AD_Client_ID);
+			if (client == null)
+				throw new JWTVerificationException("Invalid client claim");
+			if (!client.isActive())
+				throw new JWTVerificationException("Client is inactive");
 			Env.setContext(Env.getCtx(), Env.AD_CLIENT_ID, AD_Client_ID);				
 		}
 		claim = jwt.getClaim(LoginClaims.AD_User_ID.name());
 		if (!claim.isNull() && !claim.isMissing()) {
+			MUser user = MUser.get(claim.asInt());
+			if (user == null)
+				throw new JWTVerificationException("Invalid user claim");
+			if (!user.isActive())
+				throw new JWTVerificationException("User is inactive");
 			Env.setContext(Env.getCtx(), Env.AD_USER_ID, claim.asInt());
 		}
 		claim = jwt.getClaim(LoginClaims.AD_Role_ID.name());
 		int AD_Role_ID = 0;
 		if (!claim.isNull() && !claim.isMissing()) {
 			AD_Role_ID = claim.asInt();
+			MRole role = MRole.get(Env.getCtx(), AD_Role_ID);
+			if (role == null)
+				throw new JWTVerificationException("Invalid role claim");
+			if (!role.isActive())
+				throw new JWTVerificationException("Role is inactive");
 			Env.setContext(Env.getCtx(), Env.AD_ROLE_ID, AD_Role_ID);				
 		}
 		claim = jwt.getClaim(LoginClaims.AD_Org_ID.name());
@@ -193,6 +228,10 @@ public class RequestFilter implements ContainerRequestFilter {
 					requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED).build());
 				}
 			}
+			// validate login on the token to check if session is still valid
+			String errorMessage = new Login(Env.getCtx()).validateLogin(new KeyNamePair(AD_Org_ID, ""));
+			if (!Util.isEmpty(errorMessage))
+				throw new JWTVerificationException(errorMessage);
 		}
 		RestUtils.setSessionContextVariables(Env.getCtx());
 	}
